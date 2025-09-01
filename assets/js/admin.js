@@ -11,6 +11,7 @@ jQuery(document).ready(function($) {
             initTemplatePreview();
             initConditionalSettings();
             initFormValidation();
+            initLayoutPreview();
         });
         
         // Initialize on page load
@@ -19,12 +20,65 @@ jQuery(document).ready(function($) {
         initConditionalSettings();
         initFormValidation();
         initHelpSystem();
+        initLayoutPreview();
         
         // Live preview updates
         $(document).on('change', '.pgs-widget-form input, .pgs-widget-form select', function() {
             updateLivePreview($(this));
             validateForm($(this));
         });
+    }
+    
+    function initLayoutPreview() {
+        $('.pgs-widget-form select[id*="layout"]').each(function() {
+            var $select = $(this);
+            var $widget = $select.closest('.widget');
+            
+            // Add layout preview container
+            if ($widget.find('.pgs-layout-preview').length === 0) {
+                $select.closest('p').after('<div class="pgs-layout-preview"></div>');
+            }
+            
+            updateLayoutPreview($select);
+            
+            $select.on('change', function() {
+                updateLayoutPreview($(this));
+                toggleLayoutSettings($(this));
+            });
+        });
+    }
+    
+    function updateLayoutPreview($select) {
+        var layout = $select.val();
+        var $preview = $select.closest('.pgs-widget-form').find('.pgs-layout-preview');
+        
+        var layoutDescriptions = {
+            'default': 'Standard card layout with featured image, title, excerpt, and meta information.',
+            'minimal': 'Clean, minimal layout showing only title and date.',
+            'list': 'Horizontal list layout with thumbnail on the left and content on the right.',
+            'masonry': 'Pinterest-style masonry layout with varying heights.',
+            'custom': 'Custom layout optimized for specific post types with ACF field support.'
+        };
+        
+        var description = layoutDescriptions[layout] || 'Standard layout';
+        
+        var previewHtml = '<div class="pgs-settings-section">' +
+            '<h4>Layout Preview: ' + layout.charAt(0).toUpperCase() + layout.slice(1) + '</h4>' +
+            '<p>' + description + '</p>' +
+            '</div>';
+        
+        $preview.html(previewHtml);
+    }
+    
+    function toggleLayoutSettings($select) {
+        var layout = $select.val();
+        var $defaultSettings = $select.closest('.pgs-widget-form').find('.pgs-default-template-settings');
+        
+        if (layout === 'custom') {
+            $defaultSettings.slideUp(300);
+        } else {
+            $defaultSettings.slideDown(300);
+        }
     }
     
     function initColorPickers() {
@@ -45,8 +99,6 @@ jQuery(document).ready(function($) {
             $input.on('change input', function() {
                 var color = $(this).val();
                 $(this).siblings('.pgs-color-preview').css('background-color', color);
-                
-                // Live preview in widget if possible
                 updateColorPreview($(this), color);
             });
         });
@@ -56,10 +108,8 @@ jQuery(document).ready(function($) {
         var inputId = $input.attr('id');
         
         if (inputId.indexOf('pagination_bg') !== -1) {
-            // Update pagination background preview
             console.log('Updating pagination background:', color);
         } else if (inputId.indexOf('search_bg') !== -1) {
-            // Update search background preview
             console.log('Updating search background:', color);
         }
     }
@@ -78,7 +128,7 @@ jQuery(document).ready(function($) {
             
             $select.on('change', function() {
                 updateTemplatePreview($(this));
-                toggleDefaultTemplateSettings($(this));
+                toggleTemplateSettings($(this));
             });
         });
     }
@@ -88,38 +138,38 @@ jQuery(document).ready(function($) {
         var $preview = $select.closest('.pgs-widget-form').find('.pgs-template-preview');
         
         if (templateId && templateId !== '') {
-            // Show template info
             var templateName = $select.find('option:selected').text();
             var previewHtml = '<div class="pgs-settings-section">' +
                 '<h4>Selected Template</h4>' +
                 '<p><strong>' + templateName + '</strong></p>' +
-                '<small>This template will be used to display posts. Template placeholders like {{post_title}}, {{post_excerpt}}, etc. will be replaced with actual post data.</small>' +
+                '<small>This template will override layout settings and be used for all post displays including search results and pagination.</small>' +
                 '</div>';
             $preview.html(previewHtml);
         } else {
-            // Show default template preview
             var previewHtml = '<div class="pgs-settings-section">' +
-                '<h4>Default Template Preview</h4>' +
-                '<div style="border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 10px 0; background: white;">' +
-                '<div style="background: #f0f0f0; height: 80px; margin-bottom: 10px; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #666; font-size: 12px;">Featured Image</div>' +
-                '<div style="font-weight: 600; margin-bottom: 6px; color: #1a202c;">Post Title</div>' +
-                '<div style="font-size: 13px; color: #4a5568; margin-bottom: 8px; line-height: 1.4;">Post excerpt will be displayed here...</div>' +
-                '<div style="font-size: 11px; color: #718096; display: flex; justify-content: space-between;">' +
-                '<span>By Author</span><span>Date</span></div>' +
-                '</div>' +
+                '<h4>Layout-Based Rendering</h4>' +
+                '<p>Posts will be rendered using the selected layout option below.</p>' +
+                '<small>Template placeholders like {{post_title}}, {{post_excerpt}}, etc. are available for custom templates.</small>' +
                 '</div>';
             $preview.html(previewHtml);
         }
     }
     
-    function toggleDefaultTemplateSettings($select) {
+    function toggleTemplateSettings($select) {
         var templateId = $select.val();
+        var $layoutSettings = $select.closest('.pgs-widget-form').find('.pgs-layout-settings');
         var $defaultSettings = $select.closest('.pgs-widget-form').find('.pgs-default-template-settings');
         
         if (templateId && templateId !== '') {
+            $layoutSettings.slideUp(300);
             $defaultSettings.slideUp(300);
         } else {
-            $defaultSettings.slideDown(300);
+            $layoutSettings.slideDown(300);
+            // Default settings visibility depends on layout
+            var layout = $layoutSettings.find('select[id*="layout"]').val();
+            if (layout !== 'custom') {
+                $defaultSettings.slideDown(300);
+            }
         }
     }
     
@@ -210,6 +260,8 @@ jQuery(document).ready(function($) {
         // Enhanced live preview functionality
         if (inputId && inputId.indexOf('template_id') !== -1) {
             updateTemplatePreview($input);
+        } else if (inputId && inputId.indexOf('layout') !== -1) {
+            updateLayoutPreview($input);
         }
         
         // Add visual feedback for changes
@@ -227,7 +279,8 @@ jQuery(document).ready(function($) {
             
             var helpTexts = {
                 'Target Posts Grid Widget ID': 'Leave empty to target all Posts Grid widgets on the same page. Use specific widget ID to target only one widget.',
-                'Saved Template': 'Select a template created with Elementor or other page builders. Use placeholders like {{post_title}}, {{post_excerpt}}, etc.',
+                'Saved Template': 'Select a template created with Elementor or other page builders. This will override layout settings and be used everywhere.',
+                'Layout': 'Choose how posts should be displayed when not using a saved template.',
                 'Post Type': 'Choose which post type to display. Custom post types will appear here if they are public.',
                 'Posts per page': 'Number of posts to display per page. Recommended: 6-12 for optimal performance.'
             };
@@ -277,14 +330,14 @@ jQuery(document).ready(function($) {
             $form.removeClass('pgs-saving');
             
             // Add temporary success indicator
-            var $success = $('<div class="pgs-success">Settings saved successfully!</div>');
+            var $success = $('<div class="pgs-success">Settings saved successfully! Layout will be applied to all related widgets.</div>');
             $form.prepend($success);
             
             setTimeout(function() {
                 $success.fadeOut(300, function() {
                     $(this).remove();
                 });
-            }, 2000);
+            }, 3000);
         }, 1000);
     });
     
@@ -295,16 +348,71 @@ jQuery(document).ready(function($) {
             var $select = $(this);
             if ($select.siblings('.pgs-template-actions').length === 0) {
                 var $actions = $('<div class="pgs-template-actions" style="margin-top: 8px;">' +
-                    '<a href="' + pgs_admin.template_page_url + '" target="_blank" style="font-size: 12px; color: #14b8a6; text-decoration: none;">Manage Templates</a>' +
+                    '<a href="' + (pgs_admin.template_page_url || '#') + '" target="_blank" style="font-size: 12px; color: #14b8a6; text-decoration: none;">Manage Templates</a>' +
+                    ' | <a href="#" class="pgs-refresh-templates" style="font-size: 12px; color: #14b8a6; text-decoration: none;">Refresh List</a>' +
                     '</div>');
                 $select.after($actions);
             }
         });
+        
+        // Refresh templates functionality
+        $(document).on('click', '.pgs-refresh-templates', function(e) {
+            e.preventDefault();
+            var $link = $(this);
+            var $select = $link.closest('p').find('select');
+            
+            $link.text('Refreshing...');
+            
+            // Simulate refresh (in real implementation, this would be an AJAX call)
+            setTimeout(function() {
+                $link.text('Refresh List');
+                // Add visual feedback
+                $select.addClass('pgs-changed');
+                setTimeout(function() {
+                    $select.removeClass('pgs-changed');
+                }, 1000);
+            }, 1000);
+        });
     }
     
-    // Initialize template management if admin URL is available
-    if (typeof pgs_admin !== 'undefined' && pgs_admin.template_page_url) {
+    // Initialize template management if admin data is available
+    if (typeof pgs_admin !== 'undefined') {
         initTemplateManagement();
+    }
+    
+    // Enhanced layout switching
+    $(document).on('change', 'select[id*="layout"]', function() {
+        var layout = $(this).val();
+        var $form = $(this).closest('.pgs-widget-form');
+        
+        // Show/hide relevant settings based on layout
+        var $defaultSettings = $form.find('.pgs-default-template-settings');
+        
+        if (layout === 'custom') {
+            $defaultSettings.slideUp(300);
+            // Show custom layout info
+            showLayoutInfo($form, 'Custom layout will use post type specific styling with ACF field support.');
+        } else if (layout === 'minimal') {
+            $defaultSettings.slideUp(300);
+            showLayoutInfo($form, 'Minimal layout shows only essential information.');
+        } else {
+            $defaultSettings.slideDown(300);
+            hideLayoutInfo($form);
+        }
+    });
+    
+    function showLayoutInfo($form, message) {
+        var $existing = $form.find('.pgs-layout-info');
+        if ($existing.length) {
+            $existing.find('p').text(message);
+        } else {
+            var $info = $('<div class="pgs-layout-info pgs-settings-section"><h4>Layout Information</h4><p>' + message + '</p></div>');
+            $form.find('select[id*="layout"]').closest('p').after($info);
+        }
+    }
+    
+    function hideLayoutInfo($form) {
+        $form.find('.pgs-layout-info').remove();
     }
 });
 
@@ -313,7 +421,10 @@ $('<style>' +
 '.pgs-changed { background-color: rgba(20, 184, 166, 0.1) !important; }' +
 '.pgs-invalid { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1) !important; }' +
 '.pgs-disabled { opacity: 0.5; pointer-events: none; }' +
-'.pgs-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1a202c; color: white; padding: 8px 12px; border-radius: 6px; font-size: 11px; white-space: nowrap; opacity: 0; transition: all 0.3s ease; z-index: 1000; margin-bottom: 5px; }' +
+'.pgs-tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1a202c; color: white; padding: 8px 12px; border-radius: 6px; font-size: 11px; white-space: nowrap; opacity: 0; transition: all 0.3s ease; z-index: 1000; margin-bottom: 5px; max-width: 200px; white-space: normal; }' +
 '.pgs-tooltip::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #1a202c; }' +
 '.pgs-tooltip-visible { opacity: 1; }' +
+'.pgs-layout-info { margin-top: 10px; }' +
+'.pgs-template-actions { font-size: 12px; margin-top: 8px; }' +
+'.pgs-template-actions a { margin-right: 8px; }' +
 '</style>').appendTo('head');

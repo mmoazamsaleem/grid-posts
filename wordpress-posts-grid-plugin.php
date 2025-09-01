@@ -3,7 +3,7 @@
  * Plugin Name: Posts Grid & Search Widgets
  * Plugin URI: https://example.com
  * Description: Advanced posts grid widget with saved template selection, post type filtering, and enhanced search functionality.
- * Version: 2.0.0
+ * Version: 3.0.0
  * Author: Your Name
  * License: GPL v2 or later
  * Text Domain: posts-grid-search
@@ -17,9 +17,18 @@ if (!defined('ABSPATH')) {
 // Define plugin constants
 define('PGS_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('PGS_PLUGIN_PATH', plugin_dir_path(__FILE__));
-define('PGS_VERSION', '2.0.0');
+define('PGS_VERSION', '3.0.0');
 
 class PostsGridSearchPlugin {
+    
+    private static $instance = null;
+    
+    public static function get_instance() {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
     
     public function __construct() {
         add_action('plugins_loaded', array($this, 'init'));
@@ -28,6 +37,9 @@ class PostsGridSearchPlugin {
     public function init() {
         // Load text domain for translations
         load_plugin_textdomain('posts-grid-search', false, dirname(plugin_basename(__FILE__)) . '/languages');
+        
+        // Include required files
+        $this->include_files();
         
         // Register widgets
         add_action('widgets_init', array($this, 'register_widgets'));
@@ -42,12 +54,19 @@ class PostsGridSearchPlugin {
         
         // Add admin menu for template management
         add_action('admin_menu', array($this, 'add_admin_menu'));
+        
+        // Initialize ACF integration
+        PGS_ACF_Loop_Grid_Filters::get_instance();
+    }
+    
+    private function include_files() {
+        require_once PGS_PLUGIN_PATH . 'includes/class-post-layout-manager.php';
+        require_once PGS_PLUGIN_PATH . 'includes/class-posts-grid-widget.php';
+        require_once PGS_PLUGIN_PATH . 'includes/class-search-filter-widget.php';
+        require_once PGS_PLUGIN_PATH . 'includes/class-acf-loop-grid-filters.php';
     }
     
     public function register_widgets() {
-        require_once PGS_PLUGIN_PATH . 'includes/class-posts-grid-widget.php';
-        require_once PGS_PLUGIN_PATH . 'includes/class-search-filter-widget.php';
-        
         register_widget('PGS_Posts_Grid_Widget');
         register_widget('PGS_Search_Filter_Widget');
     }
@@ -55,49 +74,49 @@ class PostsGridSearchPlugin {
     public function enqueue_frontend_assets() {
         wp_enqueue_style('pgs-frontend-style', PGS_PLUGIN_URL . 'assets/css/frontend.css', array(), PGS_VERSION);
         wp_enqueue_script('pgs-frontend-script', PGS_PLUGIN_URL . 'assets/js/frontend.js', array('jquery'), PGS_VERSION, true);
-
- 
+        
         // Localize script for AJAX
         wp_localize_script('pgs-frontend-script', 'pgs_ajax', array(
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('pgs_nonce')
         ));
-
-
-        		       wp_enqueue_script('jquery');
-
+        
+        // Enqueue jQuery
+        wp_enqueue_script('jquery');
+        
+        // Fancybox for video popups
         wp_enqueue_style(
             'fancybox-css',
             'https://cdn.jsdelivr.net/npm/@fancyapps/ui@6.0/dist/fancybox/fancybox.css',
             array(),
             '6.0'
         );
-
-        // Fancybox JS
+        
         wp_enqueue_script(
             'fancybox-js',
             'https://cdn.jsdelivr.net/npm/@fancyapps/ui@6.0/dist/fancybox/fancybox.umd.js',
-            array('jquery'), // depends on jQuery
+            array('jquery'),
             '6.0',
-            true // load in footer
+            true
         );
-
-		    $fancybox_init = <<<JS
-    jQuery(document).ready(function($) {
-        Fancybox.bind("[data-fancybox]", {
-            // ✅ Your custom options
-            Thumbs: false,
-            Toolbar: {
-                display: [
-                    { id: "counter", position: "center" },
-                    "close",
-                ],
-            },
+        
+        $fancybox_init = <<<JS
+        jQuery(document).ready(function($) {
+            if (typeof Fancybox !== 'undefined') {
+                Fancybox.bind("[data-fancybox]", {
+                    Thumbs: false,
+                    Toolbar: {
+                        display: [
+                            { id: "counter", position: "center" },
+                            "close",
+                        ],
+                    },
+                });
+            }
         });
-    });
-    JS;
-
-    wp_add_inline_script('fancybox-js', $fancybox_init);
+        JS;
+        
+        wp_add_inline_script('fancybox-js', $fancybox_init);
     }
     
     public function enqueue_admin_assets($hook) {
@@ -105,6 +124,12 @@ class PostsGridSearchPlugin {
             wp_enqueue_style('pgs-admin-style', PGS_PLUGIN_URL . 'assets/css/admin.css', array(), PGS_VERSION);
             wp_enqueue_script('pgs-admin-script', PGS_PLUGIN_URL . 'assets/js/admin.js', array('jquery'), PGS_VERSION, true);
             wp_enqueue_media();
+            
+            // Localize admin script
+            wp_localize_script('pgs-admin-script', 'pgs_admin', array(
+                'template_page_url' => admin_url('options-general.php?page=posts-grid-templates'),
+                'nonce' => wp_create_nonce('pgs_admin_nonce')
+            ));
         }
     }
     
@@ -122,6 +147,29 @@ class PostsGridSearchPlugin {
         echo '<div class="wrap">';
         echo '<h1>' . __('Posts Grid Templates', 'posts-grid-search') . '</h1>';
         echo '<p>' . __('Manage your saved templates here. Templates are created using page builders like Elementor.', 'posts-grid-search') . '</p>';
+        
+        // Display available templates
+        $templates = self::get_saved_templates();
+        if (!empty($templates)) {
+            echo '<h2>' . __('Available Templates', 'posts-grid-search') . '</h2>';
+            echo '<table class="wp-list-table widefat fixed striped">';
+            echo '<thead><tr><th>' . __('Template Name', 'posts-grid-search') . '</th><th>' . __('Type', 'posts-grid-search') . '</th><th>' . __('Actions', 'posts-grid-search') . '</th></tr></thead>';
+            echo '<tbody>';
+            foreach ($templates as $id => $name) {
+                $post = get_post($id);
+                $post_type = $post ? $post->post_type : 'unknown';
+                echo '<tr>';
+                echo '<td>' . esc_html($name) . '</td>';
+                echo '<td>' . esc_html($post_type) . '</td>';
+                echo '<td><a href="' . esc_url(get_edit_post_link($id)) . '">' . __('Edit', 'posts-grid-search') . '</a></td>';
+                echo '</tr>';
+            }
+            echo '</tbody>';
+            echo '</table>';
+        } else {
+            echo '<p>' . __('No templates found. Create templates using Elementor or other page builders.', 'posts-grid-search') . '</p>';
+        }
+        
         echo '</div>';
     }
     
@@ -131,6 +179,7 @@ class PostsGridSearchPlugin {
         $search_query = sanitize_text_field($_POST['search_query'] ?? '');
         $posts_per_page = intval($_POST['posts_per_page'] ?? 6);
         $template_id = intval($_POST['template_id'] ?? 0);
+        $layout = sanitize_text_field($_POST['layout'] ?? 'default');
         $post_type = sanitize_text_field($_POST['post_type'] ?? 'post');
         $page = intval($_POST['page'] ?? 1);
         $widget_settings = $_POST['widget_settings'] ?? array();
@@ -150,9 +199,10 @@ class PostsGridSearchPlugin {
         
         ob_start();
         if ($query->have_posts()) {
+            $layout_manager = PGS_Post_Layout_Manager::get_instance();
             while ($query->have_posts()) {
                 $query->the_post();
-                $this->render_post_with_template($template_id, $widget_settings);
+                echo $layout_manager->render_post($layout, $template_id, $widget_settings);
             }
         } else {
             echo '<div class="pgs-no-posts">' . __('No posts found.', 'posts-grid-search') . '</div>';
@@ -167,87 +217,6 @@ class PostsGridSearchPlugin {
             'current_page' => $page,
             'total_posts' => $query->found_posts
         ));
-    }
-    
-    private function render_post_with_template($template_id, $widget_settings) {
-        if ($template_id && $template_id > 0) {
-            // Use saved template
-            $template_content = get_post_field('post_content', $template_id);
-            if ($template_content) {
-                // Replace template placeholders with actual post data
-                $template_content = $this->replace_template_placeholders($template_content);
-                echo $template_content;
-                return;
-            }
-        }
-        
-        // Fallback to default template
-        $this->render_default_post_template($widget_settings);
-    }
-    
-    private function replace_template_placeholders($content) {
-        $post_id = get_the_ID();
-        $title = get_the_title();
-        $excerpt = get_the_excerpt();
-        $author = get_the_author();
-        $date = get_the_date();
-        $thumbnail_url = get_the_post_thumbnail_url($post_id, 'medium');
-        $permalink = get_permalink();
-        
-        // Replace common placeholders
-        $replacements = array(
-            '{{post_title}}' => esc_html($title),
-            '{{post_excerpt}}' => esc_html($excerpt),
-            '{{post_author}}' => esc_html($author),
-            '{{post_date}}' => esc_html($date),
-            '{{post_thumbnail}}' => $thumbnail_url ? esc_url($thumbnail_url) : '',
-            '{{post_link}}' => esc_url($permalink),
-            '{{post_id}}' => $post_id
-        );
-        
-        foreach ($replacements as $placeholder => $value) {
-            $content = str_replace($placeholder, $value, $content);
-        }
-        
-        return $content;
-    }
-    
-    private function render_default_post_template($widget_settings) {
-        $post_id = get_the_ID();
-        $title = get_the_title();
-        $excerpt = get_the_excerpt();
-        $author = get_the_author();
-        $date = get_the_date();
-        $thumbnail = get_the_post_thumbnail($post_id, 'medium');
-        $permalink = get_permalink();
-        
-        $show_excerpt = !empty($widget_settings['show_excerpt']);
-        $show_author = !empty($widget_settings['show_author']);
-        $show_date = !empty($widget_settings['show_date']);
-        
-        echo '<article class="pgs-post-card">';
-        echo '<a href="' . esc_url($permalink) . '" class="pgs-post-link">';
-        if ($thumbnail) {
-            echo '<div class="pgs-post-thumbnail">' . $thumbnail . '</div>';
-        }
-        echo '<div class="pgs-post-content">';
-        echo '<h3 class="pgs-post-title">' . esc_html($title) . '</h3>';
-        if ($show_excerpt) {
-            echo '<p class="pgs-post-excerpt">' . esc_html($excerpt) . '</p>';
-        }
-        if ($show_author || $show_date) {
-            echo '<div class="pgs-post-meta">';
-            if ($show_author) {
-                echo '<span class="pgs-post-author">By ' . esc_html($author) . '</span>';
-            }
-            if ($show_date) {
-                echo '<span class="pgs-post-date">' . esc_html($date) . '</span>';
-            }
-            echo '</div>';
-        }
-        echo '</div>';
-        echo '</a>';
-        echo '</article>';
     }
     
     public static function get_saved_templates() {
@@ -296,12 +265,4 @@ class PostsGridSearchPlugin {
 }
 
 // Initialize the plugin
-new PostsGridSearchPlugin();
-
-// Include widget classes
-require_once PGS_PLUGIN_PATH . 'includes/class-posts-grid-widget.php';
-require_once PGS_PLUGIN_PATH . 'includes/class-search-filter-widget.php';
-require_once PGS_PLUGIN_PATH . 'includes/class-filters.php';
-
-
- 
+PostsGridSearchPlugin::get_instance();

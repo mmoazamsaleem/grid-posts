@@ -28,10 +28,10 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         }
         
         $template_id = !empty($instance['template_id']) ? intval($instance['template_id']) : 0;
+        $layout = !empty($instance['layout']) ? $instance['layout'] : 'default';
         $post_type = !empty($instance['post_type']) ? $instance['post_type'] : 'post';
         $posts_per_page = !empty($instance['posts_per_page']) ? intval($instance['posts_per_page']) : 6;
         $show_pagination = !empty($instance['show_pagination']);
-        $pagination_style = !empty($instance['pagination_style']) ? $instance['pagination_style'] : 'numbers';
         
         // Get current page
         $paged = (get_query_var('paged')) ? get_query_var('paged') : 1;
@@ -48,13 +48,29 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         // Generate unique widget ID for targeting
         $widget_id = 'pgs-widget-' . $this->id;
         
-        echo '<div class="pgs-posts-grid" id="' . esc_attr($widget_id) . '" data-template-id="' . esc_attr($template_id) . '" data-post-type="' . esc_attr($post_type) . '" data-posts-per-page="' . esc_attr($posts_per_page) . '" data-widget-settings="' . esc_attr(json_encode($instance)) . '">';
-        echo '<div class="pgs-posts-container">';
+        // Get layout CSS variables
+        $layout_vars = PGS_Post_Layout_Manager::get_layout_css_vars($layout, $instance);
+        $css_vars = '';
+        foreach ($layout_vars as $var => $value) {
+            $css_vars .= $var . ': ' . $value . '; ';
+        }
+        
+        echo '<div class="pgs-posts-grid" id="' . esc_attr($widget_id) . '" 
+                   data-template-id="' . esc_attr($template_id) . '" 
+                   data-layout="' . esc_attr($layout) . '"
+                   data-post-type="' . esc_attr($post_type) . '" 
+                   data-posts-per-page="' . esc_attr($posts_per_page) . '" 
+                   data-widget-settings="' . esc_attr(json_encode($instance)) . '"
+                   style="' . esc_attr($css_vars) . '">';
+        
+        $container_classes = PGS_Post_Layout_Manager::get_container_classes($layout);
+        echo '<div class="' . esc_attr($container_classes) . '">';
         
         if ($posts_query->have_posts()) {
+            $layout_manager = PGS_Post_Layout_Manager::get_instance();
             while ($posts_query->have_posts()) {
                 $posts_query->the_post();
-                $this->render_post($template_id, $instance);
+                echo $layout_manager->render_post($layout, $template_id, $instance);
             }
         } else {
             echo '<div class="pgs-no-posts">' . __('No posts found.', 'posts-grid-search') . '</div>';
@@ -64,7 +80,7 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         
         // Pagination
         if ($show_pagination && $posts_query->max_num_pages > 1) {
-            $this->render_pagination($posts_query, $pagination_style, $instance);
+            $this->render_pagination($posts_query, $instance);
         }
         
         echo '</div>'; // .pgs-posts-grid
@@ -73,203 +89,10 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         echo $args['after_widget'];
     }
     
-    private function render_post($template_id, $instance) {
-        if ($template_id && $template_id > 0) {
-            // Use saved template
-            $template_content = get_post_field('post_content', $template_id);
-            if ($template_content) {
-                echo $this->replace_template_placeholders($template_content);
-                return;
-            }
-        }
-        
-        // Fallback to default card template
-        $this->render_default_template($instance);
-    }
-    
-    private function replace_template_placeholders($content) {
-        $post_id = get_the_ID();
-        $title = get_the_title();
-        $excerpt = get_the_excerpt();
-        $author = get_the_author();
-        $date = get_the_date();
-        $thumbnail_url = get_the_post_thumbnail_url($post_id, 'medium');
-        $permalink = get_permalink();
-        
-        $replacements = array(
-            '{{post_title}}' => esc_html($title),
-            '{{post_excerpt}}' => esc_html($excerpt),
-            '{{post_author}}' => esc_html($author),
-            '{{post_date}}' => esc_html($date),
-            '{{post_thumbnail}}' => $thumbnail_url ? esc_url($thumbnail_url) : '',
-            '{{post_link}}' => esc_url($permalink),
-            '{{post_id}}' => $post_id
-        );
-        
-        foreach ($replacements as $placeholder => $value) {
-            $content = str_replace($placeholder, $value, $content);
-        }
-        
-        return $content;
-    }
-    
-    private function render_default_template($instance) {
-    $post_id   = get_the_ID();
-    $title     = get_the_title();
-    $excerpt   = get_the_excerpt();
-    $author    = get_the_author();
-    $date      = get_the_date();
-    $thumbnail = get_the_post_thumbnail($post_id, 'medium');
-    $permalink = get_permalink();
-    $post_type = get_post_type($post_id);
-
-    $show_excerpt = !empty($instance['show_excerpt']) ? true : false;
-    $show_author  = !empty($instance['show_author']) ? true : false;
-    $show_date    = !empty($instance['show_date']) ? true : false;
-
-    echo '<div class="pgs-post-card type-' . esc_attr($post_type) . '">';
-
-    if ($post_type === 'locations') {
-        // Get the custom ACF fields
-        $acf_tags         = get_field('tags', $post_id);          // ACF 'tags' field
-        $acf_channel_logo = get_field('channel_logo', $post_id); // ACF 'channel_logo' image field
-
-        echo '<a href="' . esc_url($permalink) . '" class="wctl-custom-post-card">';
-
-        // Top section with date and tag
-        echo '<div class="wctl-card-top">';
-        echo '<div class="wctl-card-meta">';
-        echo '<span class="wctl-card-date">' . esc_html($date) . '</span>';
-        if (!empty($acf_tags)) {
-            echo '<span class="wctl-card-tag">' . esc_html($acf_tags) . '</span>';
-        }
-        echo '</div>';
-
-        // Title
-        echo '<h3 class="wctl-card-title">';
-        echo  esc_html($title);
-        echo '</h3>';
-        echo '</div>';
-
-        // Bottom section
-        echo '<div class="wctl-card-bottom">';
-        echo '<div class="wctl-card-image">';
-
-        // Thumbnail
-        if ($thumbnail) {
-            echo $thumbnail;
-        }
-
-        // Channel Logo (handle all ACF return types)
-        if (!empty($acf_channel_logo)) {
-            $channel_logo_url = '';
-
-            if (is_array($acf_channel_logo) && isset($acf_channel_logo['url'])) {
-                $channel_logo_url = $acf_channel_logo['url'];
-            } elseif (is_string($acf_channel_logo)) {
-                $channel_logo_url = $acf_channel_logo;
-            } elseif (is_int($acf_channel_logo)) {
-                $channel_logo_url = wp_get_attachment_url($acf_channel_logo);
-            }
-
-            if ($channel_logo_url) {
-                echo '<div class="wctl-card-channel-logo">';
-                echo '<img src="' . esc_url($channel_logo_url) . '" alt="Channel Logo">';
-                echo '</div>';
-            }
-        }
-
-        // Hover Arrow
-        echo '<div class="wctl-card-hover-arrow">➝</div>';
-
-        echo '</div>'; // wctl-card-image
-        echo '</div>'; // wctl-card-bottom
-
-        echo '</a>';
-
-    } elseif ($post_type === 'post') {
-        $acf_icon      = get_field('corner_icon', $post_id);  // Image
-        $acf_video_url = get_field('video_url', $post_id);    // URL
-
-        // Background image
-        $bg_image_url = '';
-        if (has_post_thumbnail($post_id)) {
-            $bg_image = wp_get_attachment_image_src(get_post_thumbnail_id($post_id), 'full');
-            $bg_image_url = $bg_image ? $bg_image[0] : '';
-        }
-
-        echo '<div class="custom-post-card" style="background-image: url(\'' . esc_url($bg_image_url) . '\');">';
-
-        // Corner Icon (safe handling)
-        if (!empty($acf_icon)) {
-            $icon_url = '';
-            if (is_array($acf_icon) && isset($acf_icon['url'])) {
-                $icon_url = $acf_icon['url'];
-            } elseif (is_string($acf_icon)) {
-                $icon_url = $acf_icon;
-            } elseif (is_int($acf_icon)) {
-                $icon_url = wp_get_attachment_url($acf_icon);
-            }
-
-            if ($icon_url) {
-                echo '<img style="width: 100px; height: 100px;" src="' . esc_url($icon_url) . '" alt="Corner Icon">';
-            }
-        }
-
-        // Title
-        echo '<h3 class="custom-post-title">' . esc_html($title) . '</h3>';
-
-        // Video button
-        if (!empty($acf_video_url)) {
-            echo '<a class="video-popup-btn"  data-fancybox href="' . esc_url($acf_video_url) . '">Watch Video</a>';
-        }
-
-        echo '</div>';
-
-        // Video Popup HTML
-        ?>
-        <div id="video-popup" style="display:none;">
-            <div class="video-container">
-                <span id="close-popup">×</span>
-                <iframe id="popup-video" width="560" height="315" src="" frameborder="0" allowfullscreen></iframe>
-            </div>
-        </div>
-        <?php
-
-    } else {
-        // Default layout
-        echo '<a href="' . esc_url($permalink) . '" class="pgs-post-link">';
-        if ($thumbnail) {
-            echo '<div class="pgs-post-thumbnail">' . $thumbnail . '</div>';
-        }
-        echo '<div class="pgs-post-content">';
-        echo '<h3 class="pgs-post-title">' . esc_html($title) . '</h3>';
-        if ($show_excerpt) {
-            echo '<p class="pgs-post-excerpt">' . esc_html($excerpt) . '</p>';
-        }
-        if ($show_author || $show_date) {
-            echo '<div class="pgs-post-meta">';
-            if ($show_author) {
-                echo '<span class="pgs-post-author">By ' . esc_html($author) . '</span>';
-            }
-            if ($show_date) {
-                echo '<span class="pgs-post-date">' . esc_html($date) . '</span>';
-            }
-            echo '</div>';
-        }
-        echo '</div>';
-        echo '</a>';
-    }
-
-    echo '</div>';
-}
-
-
-
-    
-    private function render_pagination($query, $style, $instance) {
+    private function render_pagination($query, $instance) {
         $current_page = max(1, get_query_var('paged'));
         $total_pages = $query->max_num_pages;
+        $pagination_style = !empty($instance['pagination_style']) ? $instance['pagination_style'] : 'numbers';
         
         $pagination_bg = !empty($instance['pagination_bg']) ? $instance['pagination_bg'] : '#1a202c';
         $pagination_active_color = !empty($instance['pagination_active_color']) ? $instance['pagination_active_color'] : '#14b8a6';
@@ -279,7 +102,7 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         
         echo '<div class="pgs-pagination" style="--pagination-bg: ' . esc_attr($pagination_bg) . '; --pagination-active: ' . esc_attr($pagination_active_color) . '; --pagination-text: ' . esc_attr($pagination_text_color) . ';">';
         
-        if ($style === 'numbers') {
+        if ($pagination_style === 'numbers') {
             $links = paginate_links(array(
                 'base' => get_pagenum_link(1) . '%_%',
                 'format' => 'page/%#%/',
@@ -299,7 +122,7 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
                     echo $link;
                 }
             }
-        } elseif ($style === 'simple') {
+        } elseif ($pagination_style === 'simple') {
             echo '<div class="pgs-pagination-simple">';
             if ($current_page > 1) {
                 echo '<a href="' . esc_url(get_pagenum_link($current_page - 1)) . '" class="pgs-pagination-btn">' . __('Previous', 'posts-grid-search') . '</a>';
@@ -309,7 +132,7 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
                 echo '<a href="' . esc_url(get_pagenum_link($current_page + 1)) . '" class="pgs-pagination-btn">' . __('Next', 'posts-grid-search') . '</a>';
             }
             echo '</div>';
-        } elseif ($style === 'arrows') {
+        } elseif ($pagination_style === 'arrows') {
             if ($current_page > 1) {
                 echo '<a href="' . esc_url(get_pagenum_link($current_page - 1)) . '" class="pgs-pagination-btn pgs-pagination-arrow">' . esc_html($prev_icon) . '</a>';
             }
@@ -324,6 +147,7 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
     public function form($instance) {
         $title = !empty($instance['title']) ? $instance['title'] : '';
         $template_id = !empty($instance['template_id']) ? $instance['template_id'] : '';
+        $layout = !empty($instance['layout']) ? $instance['layout'] : 'default';
         $post_type = !empty($instance['post_type']) ? $instance['post_type'] : 'post';
         $posts_per_page = !empty($instance['posts_per_page']) ? $instance['posts_per_page'] : '6';
         $show_pagination = !empty($instance['show_pagination']);
@@ -339,6 +163,7 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         
         $saved_templates = PostsGridSearchPlugin::get_saved_templates();
         $post_types = PostsGridSearchPlugin::get_post_types();
+        $layout_options = PGS_Post_Layout_Manager::get_layout_options();
         ?>
         <div class="pgs-widget-form">
             <p>
@@ -346,18 +171,30 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
                 <input class="widefat" id="<?php echo $this->get_field_id('title'); ?>" name="<?php echo $this->get_field_name('title'); ?>" type="text" value="<?php echo esc_attr($title); ?>">
             </p>
             
-            <h4><?php _e('Template & Content Settings', 'posts-grid-search'); ?></h4>
+            <h4><?php _e('Template & Layout Settings', 'posts-grid-search'); ?></h4>
             
             <p>
                 <label for="<?php echo $this->get_field_id('template_id'); ?>"><?php _e('Saved Template:', 'posts-grid-search'); ?></label>
                 <select class="widefat" id="<?php echo $this->get_field_id('template_id'); ?>" name="<?php echo $this->get_field_name('template_id'); ?>">
-                    <option value=""><?php _e('Default Template', 'posts-grid-search'); ?></option>
+                    <option value=""><?php _e('Use Layout Setting', 'posts-grid-search'); ?></option>
                     <?php foreach ($saved_templates as $id => $name): ?>
                         <option value="<?php echo esc_attr($id); ?>" <?php selected($template_id, $id); ?>><?php echo esc_html($name); ?></option>
                     <?php endforeach; ?>
                 </select>
-                <small><?php _e('Select a saved template from Elementor or other page builders.', 'posts-grid-search'); ?></small>
+                <small><?php _e('Select a saved template from Elementor or other page builders. This will override the layout setting.', 'posts-grid-search'); ?></small>
             </p>
+            
+            <div class="pgs-layout-settings" style="<?php echo $template_id ? 'display: none;' : ''; ?>">
+                <p>
+                    <label for="<?php echo $this->get_field_id('layout'); ?>"><?php _e('Layout:', 'posts-grid-search'); ?></label>
+                    <select class="widefat" id="<?php echo $this->get_field_id('layout'); ?>" name="<?php echo $this->get_field_name('layout'); ?>">
+                        <?php foreach ($layout_options as $value => $label): ?>
+                            <option value="<?php echo esc_attr($value); ?>" <?php selected($layout, $value); ?>><?php echo esc_html($label); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small><?php _e('Choose how posts should be displayed when not using a saved template.', 'posts-grid-search'); ?></small>
+                </p>
+            </div>
             
             <p>
                 <label for="<?php echo $this->get_field_id('post_type'); ?>"><?php _e('Post Type:', 'posts-grid-search'); ?></label>
@@ -373,9 +210,9 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
                 <input class="widefat" id="<?php echo $this->get_field_id('posts_per_page'); ?>" name="<?php echo $this->get_field_name('posts_per_page'); ?>" type="number" value="<?php echo esc_attr($posts_per_page); ?>" min="1" max="50">
             </p>
             
-            <div class="pgs-default-template-settings" style="<?php echo $template_id ? 'display: none;' : ''; ?>">
-                <h4><?php _e('Default Template Content', 'posts-grid-search'); ?></h4>
-                <small><?php _e('These settings only apply when using the default template.', 'posts-grid-search'); ?></small>
+            <div class="pgs-default-template-settings" style="<?php echo ($template_id || $layout === 'custom') ? 'display: none;' : ''; ?>">
+                <h4><?php _e('Content Display Options', 'posts-grid-search'); ?></h4>
+                <small><?php _e('These settings apply to default layouts only.', 'posts-grid-search'); ?></small>
                 
                 <p>
                     <input class="checkbox" type="checkbox" <?php checked($show_excerpt, true); ?> id="<?php echo $this->get_field_id('show_excerpt'); ?>" name="<?php echo $this->get_field_name('show_excerpt'); ?>">
@@ -404,9 +241,9 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
                 <p>
                     <label for="<?php echo $this->get_field_id('pagination_style'); ?>"><?php _e('Pagination style:', 'posts-grid-search'); ?></label>
                     <select class="widefat" id="<?php echo $this->get_field_id('pagination_style'); ?>" name="<?php echo $this->get_field_name('pagination_style'); ?>">
-                        <option value="numbers" <?php selected($pagination_style, 'numbers'); ?>><?php _e('Numbers', 'posts-grid-search'); ?></option>
-                        <option value="simple" <?php selected($pagination_style, 'simple'); ?>><?php _e('Simple', 'posts-grid-search'); ?></option>
-                        <option value="arrows" <?php selected($pagination_style, 'arrows'); ?>><?php _e('Arrows only', 'posts-grid-search'); ?></option>
+                        <option value="numbers" <?php selected($instance['pagination_style'] ?? 'numbers', 'numbers'); ?>><?php _e('Numbers', 'posts-grid-search'); ?></option>
+                        <option value="simple" <?php selected($instance['pagination_style'] ?? 'numbers', 'simple'); ?>><?php _e('Simple', 'posts-grid-search'); ?></option>
+                        <option value="arrows" <?php selected($instance['pagination_style'] ?? 'numbers', 'arrows'); ?>><?php _e('Arrows only', 'posts-grid-search'); ?></option>
                     </select>
                 </p>
                 
@@ -441,17 +278,36 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         
         <script>
         jQuery(document).ready(function($) {
-            // Toggle default template settings visibility
+            // Toggle layout settings visibility
             $('#<?php echo $this->get_field_id('template_id'); ?>').on('change', function() {
                 var templateId = $(this).val();
+                var $layoutSettings = $(this).closest('.pgs-widget-form').find('.pgs-layout-settings');
                 var $defaultSettings = $(this).closest('.pgs-widget-form').find('.pgs-default-template-settings');
                 
                 if (templateId) {
+                    $layoutSettings.hide();
+                    $defaultSettings.hide();
+                } else {
+                    $layoutSettings.show();
+                    toggleDefaultSettings();
+                }
+            });
+            
+            // Toggle default template settings based on layout
+            $('#<?php echo $this->get_field_id('layout'); ?>').on('change', function() {
+                toggleDefaultSettings();
+            });
+            
+            function toggleDefaultSettings() {
+                var layout = $('#<?php echo $this->get_field_id('layout'); ?>').val();
+                var $defaultSettings = $('.pgs-default-template-settings');
+                
+                if (layout === 'custom') {
                     $defaultSettings.hide();
                 } else {
                     $defaultSettings.show();
                 }
-            });
+            }
             
             // Toggle pagination settings visibility
             $('#<?php echo $this->get_field_id('show_pagination'); ?>').on('change', function() {
@@ -472,6 +328,7 @@ class PGS_Posts_Grid_Widget extends WP_Widget {
         $instance = array();
         $instance['title'] = (!empty($new_instance['title'])) ? sanitize_text_field($new_instance['title']) : '';
         $instance['template_id'] = (!empty($new_instance['template_id'])) ? intval($new_instance['template_id']) : 0;
+        $instance['layout'] = (!empty($new_instance['layout'])) ? sanitize_text_field($new_instance['layout']) : 'default';
         $instance['post_type'] = (!empty($new_instance['post_type'])) ? sanitize_text_field($new_instance['post_type']) : 'post';
         $instance['posts_per_page'] = (!empty($new_instance['posts_per_page'])) ? intval($new_instance['posts_per_page']) : 6;
         $instance['show_pagination'] = !empty($new_instance['show_pagination']);
